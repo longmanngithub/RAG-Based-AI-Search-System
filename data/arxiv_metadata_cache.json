@@ -1,0 +1,140 @@
+{
+  "1301.3781": {
+    "arxiv_id": "1301.3781",
+    "authors": "Mikolov et al.",
+    "title": "Efficient Estimation of Word Representations in Vector Space",
+    "year": 2013
+  },
+  "1603.09320": {
+    "arxiv_id": "1603.09320",
+    "authors": "Malkov et al.",
+    "title": "Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs",
+    "year": 2016
+  },
+  "1702.08734": {
+    "arxiv_id": "1702.08734",
+    "authors": "Johnson et al.",
+    "title": "Billion-scale similarity search with GPUs",
+    "year": 2017
+  },
+  "1706.03762": {
+    "arxiv_id": "1706.03762",
+    "authors": "Vaswani et al.",
+    "title": "Attention Is All You Need",
+    "year": 2017
+  },
+  "1810.04805": {
+    "arxiv_id": "1810.04805",
+    "authors": "Devlin et al.",
+    "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+    "year": 2018
+  },
+  "1907.11692": {
+    "arxiv_id": "1907.11692",
+    "authors": "Liu et al.",
+    "title": "RoBERTa: A Robustly Optimized BERT Pretraining Approach",
+    "year": 2019
+  },
+  "1908.10084": {
+    "arxiv_id": "1908.10084",
+    "authors": "Reimers et al.",
+    "title": "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks",
+    "year": 2019
+  },
+  "1908.10396": {
+    "arxiv_id": "1908.10396",
+    "authors": "Guo et al.",
+    "title": "Accelerating Large-Scale Inference with Anisotropic Vector Quantization",
+    "year": 2019
+  },
+  "2002.08909": {
+    "arxiv_id": "2002.08909",
+    "authors": "Guu et al.",
+    "title": "REALM: Retrieval-Augmented Language Model Pre-Training",
+    "year": 2020
+  },
+  "2004.04906": {
+    "arxiv_id": "2004.04906",
+    "authors": "Karpukhin et al.",
+    "title": "Dense Passage Retrieval for Open-Domain Question Answering",
+    "year": 2020
+  },
+  "2004.12832": {
+    "arxiv_id": "2004.12832",
+    "authors": "Khattab et al.",
+    "title": "ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT",
+    "year": 2020
+  },
+  "2005.11401": {
+    "arxiv_id": "2005.11401",
+    "authors": "Lewis et al.",
+    "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+    "year": 2020
+  },
+  "2005.14165": {
+    "arxiv_id": "2005.14165",
+    "authors": "Brown et al.",
+    "title": "Language Models are Few-Shot Learners",
+    "year": 2020
+  },
+  "2007.00808": {
+    "arxiv_id": "2007.00808",
+    "authors": "Xiong et al.",
+    "title": "Approximate Nearest Neighbor Negative Contrastive Learning for Dense Text Retrieval",
+    "year": 2020
+  },
+  "2201.11903": {
+    "arxiv_id": "2201.11903",
+    "authors": "Wei et al.",
+    "title": "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models",
+    "year": 2022
+  },
+  "2203.02155": {
+    "arxiv_id": "2203.02155",
+    "authors": "Ouyang et al.",
+    "title": "Training language models to follow instructions with human feedback",
+    "year": 2022
+  },
+  "2212.08073": {
+    "arxiv_id": "2212.08073",
+    "authors": "Bai et al.",
+    "title": "Constitutional AI: Harmlessness from AI Feedback",
+    "year": 2022
+  },
+  "2302.00083": {
+    "arxiv_id": "2302.00083",
+    "authors": "Ram et al.",
+    "title": "In-Context Retrieval-Augmented Language Models",
+    "year": 2023
+  },
+  "2302.13971": {
+    "arxiv_id": "2302.13971",
+    "authors": "Touvron et al.",
+    "title": "LLaMA: Open and Efficient Foundation Language Models",
+    "year": 2023
+  },
+  "2303.08774": {
+    "arxiv_id": "2303.08774",
+    "authors": "OpenAI et al.",
+    "title": "GPT-4 Technical Report",
+    "year": 2023
+  },
+  "2307.03172": {
+    "arxiv_id": "2307.03172",
+    "authors": "Liu et al.",
+    "title": "Lost in the Middle: How Language Models Use Long Contexts",
+    "year": 2023
+  },
+  "2310.11511": {
+    "arxiv_id": "2310.11511",
+    "authors": "Asai et al.",
+    "title": "Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection",
+    "year": 2023
+  },
+  "2312.10997": {
+    "arxiv_id": "2312.10997",
+    "authors": "Gao et al.",
+    "title": "Retrieval-Augmented Generation for Large Language Models: A Survey",
+    "year": 2023
+  }
+}

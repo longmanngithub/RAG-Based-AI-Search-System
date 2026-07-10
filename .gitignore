@@ -48,7 +48,6 @@ data/downloaded_data/
 data/processed_data/
 data/sample_docs/
 *.json.cache
-arxiv_metadata_cache.json
 *.log
 .cache/
 EVALUATION.md
