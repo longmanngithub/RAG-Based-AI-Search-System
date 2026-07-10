@@ -59,6 +59,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
+import torch
 from sentence_transformers import SentenceTransformer, CrossEncoder  # noqa: F401  (import before faiss)
 
 # faiss and torch (pulled in by sentence_transformers) each bundle their own
@@ -95,21 +96,20 @@ CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / ".index_cache"
 RERANK_CANDIDATE_POOL = 40
 
 
+def _get_device() -> str:
+	"""Detect available device: MPS (Apple Silicon) > CUDA (GPU) > CPU."""
+	if torch.backends.mps.is_available():
+		return "mps"
+	if torch.cuda.is_available():
+		return "cuda"
+	return "cpu"
+
+
 class VectorStore:
     def __init__(self):
-        # MPS (Apple Silicon GPU) -- measured ~3x faster than CPU on this
-        # corpus (17.6s vs 52.9s to encode ~3,300 chunks). MPS shares unified
-        # memory with the rest of the OS, so headroom varies by machine and
-        # by what else is running; an earlier version forced device="cpu"
-        # after observing "RuntimeError: MPS backend out of memory" on a
-        # 16GB Mac with other apps open. If that error reappears, switch
-        # back to "cpu" -- it costs roughly a minute of one-time
-        # index-build latency (cached by Streamlit's @st.cache_resource)
-        # in exchange for working regardless of available memory.
-        self.model = SentenceTransformer(EMBED_MODEL, device="mps")
-        # Stage-2 reranker. Loaded once here; @st.cache_resource in app.py keeps
-        # the whole VectorStore (both models) alive for the process's lifetime.
-        self.reranker = CrossEncoder(RERANKER_MODEL, device="mps")
+        device = _get_device()
+        self.model = SentenceTransformer(EMBED_MODEL, device=device)
+        self.reranker = CrossEncoder(RERANKER_MODEL, device=device)
         self.index: Optional[faiss.Index] = None
         self.chunks: List[Chunk] = []
 
