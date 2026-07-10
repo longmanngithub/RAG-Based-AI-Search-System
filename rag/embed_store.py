@@ -97,11 +97,13 @@ RERANK_CANDIDATE_POOL = 40
 
 
 def _get_device() -> str:
-	"""Detect available device: MPS (Apple Silicon) > CUDA (GPU) > CPU."""
-	if torch.backends.mps.is_available():
-		return "mps"
+	"""Detect available device: CUDA > XPU > MPS > CPU."""
 	if torch.cuda.is_available():
 		return "cuda"
+	if torch.xpu.is_available():
+		return "xpu"
+	if torch.backends.mps.is_available():
+		return "mps"
 	return "cpu"
 
 
