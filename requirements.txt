@@ -1,0 +1,10 @@
+# Core
+streamlit
+numpy
+sentence-transformers   # embeddings: BAAI/bge-small-en-v1.5 (local, free, no API key)
+faiss-cpu                # vector database: exact cosine-equivalent search (IndexFlatIP)
+pymupdf                  # backs LangChain's PyMuPDFLoader (imported as `fitz`)
+langchain-community      # document loaders: PyMuPDFLoader, TextLoader
+langchain-text-splitters # chunking: RecursiveCharacterTextSplitter
+google-genai             # LLM generation: cloud-hosted Gemma 4 (26B-A4B MoE) via the Gemini API
+python-dotenv            # loads GOOGLE_API_KEY from a .env file
