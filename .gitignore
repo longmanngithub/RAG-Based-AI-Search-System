@@ -44,7 +44,6 @@ Thumbs.db
 
 # Project-specific
 data/.index_cache/
-data/papers/
 data/downloaded_data/
 data/processed_data/
 data/sample_docs/
