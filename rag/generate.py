@@ -10,45 +10,6 @@ Two modes are provided:
   https://aistudio.google.com/apikey, set either as a real environment
   variable or in a `.env` file at the project root (see .env.example) --
   loaded automatically below via python-dotenv.
-
-  Model: gemini-3.5-flash (see MODEL_NAME). This project previously used
-  Gemma 4 (gemma-4-26b-a4b-it, MoE) here, which was migrated from local
-  Ollama (gemma4:e4b) for latency reasons -- but Gemma 4 turned out to be
-  unreliable for *grounded generation with a token cap*: it spends a
-  variable, uncappable number of internal reasoning tokens against
-  max_output_tokens (thinking_budget is not adjustable for that model -- the
-  API rejects it) and frequently hit the limit before emitting any answer
-  (finish_reason=MAX_TOKENS, empty text), worst on multi-paper synthesis
-  questions, surfacing to the user as a *blank answer*. A mainline Gemini
-  Flash model does not have this failure mode and is also several times
-  faster (gemini-2.5-flash measured 3-4s with full grounded answers on the
-  exact queries Gemma blanked on). MODEL_NAME is a single constant -- swap it
-  to gemini-2.5-flash (proven-stable fallback) if gemini-3.5-flash is
-  capacity-constrained (503) on the free tier at demo time.
-
-The "llm" mode call sends a fixed SYSTEM_PROMPT (persona, scope, and
-anti-jailbreak rules -- see below) as the `system_instruction` config, and
-the per-query context + question as the actual prompt content. Keeping the
-system prompt in `system_instruction` rather than concatenated into the
-prompt text is what lets the model apply its trained higher-priority
-weighting to it, the same reasoning as the separate system-role message this
-project used with Ollama.
-
-No system prompt makes any model unjailbreakable in an absolute sense --
-prompt-level defenses are a mitigation, not a proof. What SYSTEM_PROMPT below
-does is: (a) explicitly tell the model to treat retrieved paper text as
-untrusted data, never as instructions, since that text comes from external
-PDFs this project didn't author, and (b) refuse the well-known jailbreak
-patterns (roleplay/hypothetical framing, "ignore previous instructions",
-encoded requests, claims of special/developer mode) rather than staying
-silent on them.
-
-Streaming: llm_answer_stream / generate_answer_stream yield the answer
-token-by-token (via generate_content_stream) for use with st.write_stream()
-in app.py. llm_answer / generate_answer remain non-streaming (they return one
-string) for callers that just want the final text -- e.g. EVALUATION.md's
-scripted runs -- and are implemented by consuming the streaming generator
-internally, so there's one code path.
 """
 
 import os
@@ -66,46 +27,14 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 MODEL_NAME = "gemini-2.5-flash"
 
-# Models offered in the app's "llm"-mode dropdown (app.py). All are Google
-# Gemini text models that support generateContent on the free tier. Ordering =
-# recommended first; MODEL_NAME above is the default (index 0).
-#
-# Grounding vs. speed trade-off, measured directly against this project's
-# strictly-grounded SYSTEM_PROMPT on the "capital of France" corpus-artifact
-# query (the Self-RAG paper contains the phrase but NOT the answer "Paris"):
-#   - Full flash models (gemini-2.5-flash) correctly answer "the passages do
-#     not state the capital of France" -- they obey the documents-only rule.
-#   - "-lite" models (gemini-2.5-flash-lite, gemini-3.1-flash-lite) are faster
-#     (~1-2s) but answered "Paris" from world knowledge -- a grounding leak.
-# So the default is a full model; the lites are offered for speed with that
-# caveat surfaced in the UI. gemini-3.5-flash is the strongest but was
-# intermittently 503-congested on the free tier at the time of writing (the
-# retry + never-blank fallback handle that gracefully).
 AVAILABLE_MODELS = [
     "gemini-2.5-flash",
-    "gemini-3.5-flash",
     "gemini-3.1-flash-lite",
-    "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
 ]
 
-# Cap on generated answer length. Raised from 500 after finding that a low cap
-# interacts badly with "thinking" models: internal reasoning tokens count
-# against this budget, so too small a value can exhaust it before any answer
-# text is emitted (see the empty-response handling in llm_answer_stream). 1500
-# is ample for the short, cited answers the system prompt asks for, with
-# headroom for reasoning overhead.
+# Max output tokens for the LLM.
 MAX_OUTPUT_TOKENS = 1500
 
-# Live testing turned up an intermittent google.genai.errors.ServerError (a
-# transient 5xx from Google's side, not a bad request) on an otherwise-normal
-# query -- this is exactly the kind of failure a user would see as "doesn't
-# generate the response properly," since without a retry it goes straight to
-# the extractive fallback. ServerError is retried (it's the transient,
-# infra-side case) -- this also covers the 503 "high demand" a newer/popular
-# model can return under load. ClientError (bad/invalid key, malformed
-# request) is not retried, since retrying an auth failure just wastes time
-# before the same fallback.
 MAX_RETRIES = 2
 RETRY_DELAY_SECONDS = 1.5
 
@@ -224,13 +153,6 @@ def llm_answer_stream(query: str, retrieved: List[Tuple[Chunk, float]],
                     yield chunk.text
             if started:
                 return
-            # Stream completed but produced NO text. Observed with
-            # gemma-4-26b-a4b-it, which spends a variable, uncappable number of
-            # reasoning tokens against max_output_tokens and can hit the limit
-            # (finish_reason=MAX_TOKENS) before emitting any answer -- worst on
-            # multi-paper synthesis questions. That used to surface to the user
-            # as a blank answer. Treat it like a transient failure: retry, then
-            # fall back to extractive rather than showing nothing.
             last_error = RuntimeError("model returned an empty response")
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY_SECONDS)
@@ -274,10 +196,6 @@ def generate_answer_stream(
     query: str, retrieved: List[Tuple[Chunk, float]], mode: str = "extractive",
     model: str = MODEL_NAME,
 ) -> Iterator[str]:
-    """Streaming counterpart to generate_answer, for st.write_stream() in app.py.
-    "extractive" mode has no real token stream, so it yields its one chunk
-    immediately -- st.write_stream renders that the same as any other case.
-    `model` selects which Gemini model "llm" mode calls (see AVAILABLE_MODELS)."""
     if mode == "llm":
         yield from llm_answer_stream(query, retrieved, model=model)
     else:

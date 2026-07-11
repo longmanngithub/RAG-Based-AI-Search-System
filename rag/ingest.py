@@ -64,24 +64,6 @@ def _title_from_filename(filename: str) -> str:
 
 
 def _metadata_card(doc: dict) -> Optional[str]:
-    """A short synthetic 'what is this paper' chunk, one per document.
-
-    Purpose: title/acronym queries like "What is ScaNN?" or "What is the paper
-    Attention Is All You Need about?" retrieve poorly against a paper's *body*
-    text when the acronym barely appears there (ScaNN's own paper is titled
-    "Accelerating Large-Scale Inference with Anisotropic Vector Quantization" --
-    the string "ScaNN" is nearly absent). This card gives every paper one chunk
-    that states its title and common name explicitly, so those queries have
-    something to match. Verified: the card lands in the bi-encoder recall pool
-    and wins the cross-encoder rerank for exactly these otherwise-missed queries.
-
-    The "common name" is the corpus's own filename slug (e.g. "scann",
-    "attention_is_all_you_need") -- NOT a hand-maintained acronym dictionary.
-    It comes from the same source of truth as everything else (the fetched
-    file / _manifest.json), so dropping in different papers needs no code change.
-    A document with no resolvable title (no slug, no arXiv metadata) gets no
-    card rather than a misleading one.
-    """
     title = doc.get("title")
     if not title:
         return None
@@ -99,11 +81,6 @@ def _metadata_card(doc: dict) -> Optional[str]:
 
 
 def _doc_metadata(filename: str, first_page_text: str) -> dict:
-    """Look up a document's real metadata: the fetch manifest first (ground
-    truth, if this PDF came from scripts/fetch_papers.py), then arXiv's own
-    watermark ID extracted from page 1 only (deeper pages risk matching a
-    citation's arXiv ID instead of the paper's own -- see rag/metadata.py).
-    Falls back to a filename-derived title if neither yields a resolvable ID."""
     slug = os.path.splitext(filename)[0]
     arxiv_id = arxiv_id_from_manifest(slug) or extract_arxiv_id(first_page_text)
     if arxiv_id:
@@ -164,11 +141,7 @@ def load_documents_any(folder: str) -> List[dict]:
 
 
 def build_chunk_records(docs: List[dict], chunk_size: int = 120, chunk_overlap: int = 20) -> List[Chunk]:
-    """Turn loaded documents into a flat list of Chunk records ready for embedding.
-
-    chunk_size/chunk_overlap are in words, via RecursiveCharacterTextSplitter's
-    length_function hook -- not the library's default of raw characters.
-    """
+    """Turn loaded documents into a flat list of Chunk records ready for embedding."""
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
@@ -177,13 +150,6 @@ def build_chunk_records(docs: List[dict], chunk_size: int = 120, chunk_overlap: 
     records = []
     for doc in docs:
         pieces = splitter.split_text(doc["text"])
-        # One synthetic metadata card per document, indexed first, so
-        # "what is <paper>?" / bare-acronym queries have an explicit chunk to
-        # match even when the acronym is nearly absent from the body text. The
-        # paper's opening chunk (its title/abstract region) is appended so the
-        # card carries enough real content for the LLM to actually *describe*
-        # the paper, not just name it -- without this, "What is ScaNN?" matches
-        # the card but the model can only echo the title back.
         card = _metadata_card(doc)
         if card:
             if pieces:
