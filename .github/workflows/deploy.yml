@@ -22,3 +22,17 @@ jobs:
             git reset --hard origin/main
             docker compose up -d --build
             docker image prune -f
+
+      - name: Verify deployment is healthy
+        run: |
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" https://seir-rag.bedrock.monster/_stcore/health)
+            if [ "$code" = "200" ]; then
+              echo "Health check passed (HTTP $code)"
+              exit 0
+            fi
+            echo "Attempt $i: got HTTP $code, retrying in 5s..."
+            sleep 5
+          done
+          echo "Health check failed after retries"
+          exit 1
