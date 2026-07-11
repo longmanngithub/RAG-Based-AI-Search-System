@@ -1,0 +1,16 @@
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.env
+.env.local
+data/.index_cache/
+.DS_Store
+.pytest_cache/
+.vscode/
+.idea/
+*.md
+.devcontainer/

@@ -1,0 +1,22 @@
+services:
+  rag-search:
+    build: .
+    container_name: rag-search
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      # Persist the FAISS index cache across container restarts/rebuilds
+      # so you don't eat the ~30s cold-build cost on every deploy.
+      - index-cache:/app/data/.index_cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+volumes:
+  index-cache:
