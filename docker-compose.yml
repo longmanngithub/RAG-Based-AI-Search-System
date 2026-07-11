@@ -2,7 +2,10 @@ services:
   rag-search:
     build: .
     container_name: rag-search
-    restart: unless-stopped
+    # "always" (not "unless-stopped"): the host's podman-restart.service
+    # only auto-starts containers on boot when the policy is exactly
+    # "always" -- it filters out "unless-stopped".
+    restart: always
     ports:
       - "8501:8501"
     env_file:
