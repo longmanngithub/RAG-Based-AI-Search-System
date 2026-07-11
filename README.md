@@ -32,13 +32,6 @@ degrades gracefully to the same extractive output with an explanatory
 message if the key is missing/invalid or the API call fails, rather than
 crashing.
 
-This project ran generation locally via Ollama earlier in development
-specifically to avoid needing an API key at all, but that requires real
-local compute — on a machine without much spare RAM, local inference was
-slow enough to hurt the live-demo experience. Moving to the cloud trades
-"fully offline" for "actually fast regardless of your hardware," at the
-cost of needing a key and sending retrieved paper excerpts over the network.
-
 Open the URL Streamlit prints (usually `http://localhost:8501`) and ask a
 question like *"How does the attention mechanism work in Transformers?"*
 
@@ -181,234 +174,122 @@ final_project_starter/
 
 See [EVALUATION.md](EVALUATION.md) for the full write-up: 10 test queries
 (specific, cross-paper synthesis, and one deliberately out-of-corpus),
-retrieved sources and scores, and a discussion of what worked and what
-didn't — including a documented retrieval miss (a query naming the FAISS
-*paper* doesn't surface it in the top 10 results, despite FAISS itself being
-the library powering the vector store) and the relevance-threshold
-calibration data.
+retrieved sources and rerank scores, the relevance-threshold calibration
+data, LLM-mode groundedness checks, and jailbreak-resistance testing.
 
 ## Known limitations
 
-- **Chunking uses LangChain's `RecursiveCharacterTextSplitter`**, not a
-  from-scratch sentence-aware splitter (an earlier version of this project
-  used a hand-rolled regex sentence-splitter instead). The recursive splitter
-  is more robust — it guarantees every chunk fits the target size by backing
-  off through paragraph → line → word → character separators, which
-  eliminated an edge case the old splitter could hit (a single 2,273-word
-  chunk observed on reference-list text with no sentence-ending punctuation)
-  — but it can still occasionally cut a chunk boundary mid-sentence, unlike
-  the old splitter's "never splits mid-sentence" guarantee. A deliberate
-  trade-off: fewer size outliers, slightly less semantically clean edges.
-- **PDF text extraction** (via PyMuPDF/`fitz`, loaded through LangChain's
-  `PyMuPDFLoader`) still degrades on multi-column
-  layouts, inline math, and figures/tables — some chunks contain garbled or
-  out-of-order text as a result, even though PyMuPDF handles this corpus more
-  robustly than the `pypdf`-based loader it replaced (which intermittently
-  failed on `colbert.pdf`). Any PDF that still fails to parse is skipped with
-  a logged warning rather than crashing ingestion (see First Run Notes above).
-  Two specific artifacts were investigated directly: (1) **line-wrap
-  hyphenation** ("the for-\nmer two" extracting as "for- mer") is fixed —
-  `rag/ingest.py:_dehyphenate()` rejoins a hyphen immediately followed by a
-  newline and a lowercase letter, verified against the actual corpus (zero
-  such patterns remain post-fix). (2) **inline footnote markers** (e.g. a
-  citation URL landing mid-paragraph) are left alone — PyMuPDF has no
-  built-in way to separate body text from footnote regions, and doing so
-  properly needs bounding-box/font-size layout analysis, which is real added
-  complexity for a cosmetic issue that doesn't affect retrieval or generation
-  quality. Also tested PyMuPDF's layout-aware `sort=True` extraction mode as
-  a possible general fix for column-jumbled text — it made this corpus's
-  two-column layout *worse* (interleaved text from both columns mid-sentence
-  on at least one page), so it was not adopted.
-- **PyMuPDF is AGPL-3.0-licensed** (or requires a commercial license from
-  Artifex for closed-source use) — a non-issue for this coursework project,
-  but worth knowing if this codebase were ever reused somewhere that couldn't
-  accept AGPL. `pypdf` (BSD-licensed, permissive) is the drop-in alternative
-  if that ever matters — swap it back into `rag/ingest.py:load_pdf_documents`.
-- **Embeddings run on MPS (Apple Silicon GPU), not CPU.** `VectorStore`
-  explicitly sets `device="mps"` in `rag/embed_store.py` — measured ~3x
-  faster than CPU on this corpus (17.6s vs 52.9s to encode ~3,300 chunks).
-  The trade-off: MPS shares unified memory with the rest of the OS, and an
-  earlier version of this project forced `device="cpu"` after observing
-  `RuntimeError: MPS backend out of memory` on a 16GB Mac with other apps
-  open. That error didn't reproduce in later testing, but headroom depends
-  on the specific machine and what else is running at the time — if it
-  reappears, switch back to `device="cpu"` (costs roughly a minute of
-  one-time index-build latency, cached by `@st.cache_resource`, in exchange
-  for working regardless of available memory).
-- **Persisted embedding/index cache** — the built FAISS index is cached to
-  disk (`data/.index_cache/`, gitignored) keyed by a fingerprint of the
-  embedding model + the exact chunk texts, so an unchanged corpus loads the
-  index in milliseconds on process restart instead of re-embedding ~3,300
-  chunks (~18s saved; measured cold 32.7s → warm 15.3s total build, the
-  remainder being one-time model loading). Any change to the corpus, chunking,
-  or embedding model changes the fingerprint and forces a clean rebuild, so the
-  cache can never go stale. `@st.cache_resource` still avoids even this within a
-  single running process. (The cross-encoder reranker isn't cached — it's a
-  model load, ~1s, not the embedding pass.)
-- **Why there's a relevance threshold at all**: the brief's Section 3
-  architecture table doesn't list a filtering stage between "Retrieve" and
-  "Generate," which raises a fair question — is `MIN_RELEVANCE_SCORE` scope
-  creep? It isn't: Section 2's functional requirement #6 is explicit
-  ("Graceful failure — when nothing relevant is found, say so instead of
-  hallucinating an answer"), independent of what the architecture summary
-  table shows. In "extractive" mode there is no LLM to make that judgment —
-  the raw top-k chunks are all that's shown, so *something* has to decide
-  "nothing relevant" or that mode can never satisfy requirement #6 at all. A
-  single float comparison is close to the simplest possible implementation
-  of that requirement; the actual complexity this project added (and then
-  removed) was the multi-round recalibration and the acronym-specific
-  patches chasing edge cases the threshold's existence doesn't itself
-  require.
-- **`MIN_RELEVANCE_SCORE = 0.10` is a fixed, corpus-calibrated threshold**,
-  not an adaptive one — but it now gates on the **cross-encoder rerank score**
-  (0–1, a sigmoid of the reranker logit), not on bi-encoder cosine, which is a
-  materially more robust signal. History: the cosine-based version was
-  recalibrated three times (0.72 → 0.68 → 0.66) chasing a ~0.03-wide gap
-  between genuinely-unrelated and genuinely-relevant-but-thin queries, because
-  raw cosine simply does not separate those two populations — both land in
-  ~0.54–0.65, so *every* cosine threshold either refused real queries ("What
-  is HNSW?" at 0.56, "What is the Attention Is All You Need paper about?" at
-  0.65) or admitted unrelated ones ("What is the capital of France?" at 0.65).
-  Switching the gate to the reranker score replaced that ~0.03 gap with a
-  ~0.25-wide one: genuinely out-of-corpus queries score under 0.05, while real
-  queries (even weak-signal acronym/title ones) score above ~0.30, so 0.10
-  sits in a comfortable margin instead of threading a needle. See EVALUATION.md
-  for the full before/after calibration data. One documented edge case
-  survives and is *handled a layer deeper*: "what is the capital of France?"
-  still scores high (~0.94) because the Self-RAG paper quotes that exact phrase
-  as a worked example — so retrieval genuinely does contain it — but in "llm"
-  mode the grounded system prompt correctly describes what the Self-RAG passage
-  *says about that example* rather than answering "Paris" from world knowledge
-  (verified). A gate leak no longer means an ungrounded answer.
-- **Bare-acronym / paper-title queries: largely fixed by reranking.** "What is
-  HNSW?", "What is DPR?", "What is the paper Attention Is All You Need about?"
-  and similar used to score right at or below the old cosine threshold and were
-  intermittently refused — a general bi-encoder weakness (short, low-content
-  queries embed weakly; confirmed the same gap exists on `all-MiniLM-L6-v2`,
-  so a different *embedding* model was never the fix — see EVALUATION.md). The
-  cross-encoder rerank stage resolves most of these by scoring the (query,
-  passage) pair jointly instead of comparing two independent vectors: across a
-  17-query in-corpus battery that previously produced 11 wrong refusals, all 17
-  now pass. Earlier lexical fixes for this same gap (a hardcoded
-  `ACRONYM_EXPANSIONS` dict, a BM25 hybrid, an exact-acronym-token boost) were
-  all removed and deliberately *not* revived — the reranker is a purely neural
-  second stage, consistent with the brief's "TF-IDF vectors → Real embeddings"
-  framing, and needs no keyword layer. The acronyms that *barely appear in
-  their own papers' body text* ("ScaNN" → "Accelerating Large-Scale Inference
-  with Anisotropic Vector Quantization"), which even a joint reranker had no
-  signal for, are now handled by the **per-document metadata card** (see the
-  ingest stage in Architecture): each paper gets one synthetic chunk stating
-  its title + common name (the filename slug) + authors, so "What is ScaNN?"
-  went from refused (0.000) to answered (0.999, correct paper). The card's
-  "common name" is the corpus's own filename slug, not a hand-maintained
-  acronym dictionary, so it needs no per-corpus upkeep. One cosmetic residual:
-  "What is FAISS?" is answered but a Dense-Passage-Retrieval chunk that
-  *mentions* FAISS can still out-rank the FAISS card at position 1 (the card is
-  still retrieved within top-k) — it answers correctly, just isn't perfectly
-  ordered.
-- **Cross-encoder reranking is single-stage, not iterative.** Ranking is a
-  bi-encoder recall pass (FAISS cosine over the top `RERANK_CANDIDATE_POOL`)
-  followed by one cross-encoder rerank; there is no further multi-hop or
-  query-decomposition step, so a synthesis question spanning several papers
-  still depends on all the needed papers landing in the reranked top-k. The
-  reranker widened this considerably versus pure cosine (e.g. "How does ColBERT
-  differ from DPR?" now retrieves both papers' chunks where cosine-top-3
-  surfaced only ColBERT), but a question needing 4–5 papers at once can still
-  under-retrieve at small `top_k` — raise `top_k` or add multi-query expansion
-  if that matters for a given corpus.
+- **Chunking** uses LangChain's `RecursiveCharacterTextSplitter` (paragraph →
+  line → word → character backoff), which guarantees every chunk fits the
+  ~120-word target but can still cut a boundary mid-sentence.
+- **PDF text extraction** (PyMuPDF/`fitz` via LangChain's `PyMuPDFLoader`)
+  still degrades on multi-column layouts, inline math, and figures/tables —
+  some chunks contain garbled or out-of-order text. Line-wrap hyphenation
+  ("the for-\nmer two") is fixed by `rag/ingest.py:_dehyphenate()`; inline
+  footnote markers are left as-is (needs layout/bounding-box analysis to fix
+  properly, which isn't worth the complexity for a cosmetic issue). A PDF that
+  fails to parse is skipped with a logged warning rather than crashing
+  ingestion.
+- **PyMuPDF is AGPL-3.0-licensed** (or needs a commercial license from Artifex
+  for closed-source use) — a non-issue for coursework, but worth knowing if
+  this codebase is ever reused somewhere that can't accept AGPL. `pypdf`
+  (BSD-licensed) is the drop-in alternative in `rag/ingest.py:load_pdf_documents`.
+- **Embeddings and reranking run on MPS (Apple Silicon GPU)** — `VectorStore`
+  sets `device="mps"`, ~3x faster than CPU on this corpus. MPS shares unified
+  memory with the rest of the OS; if `RuntimeError: MPS backend out of memory`
+  ever appears, switch to `device="cpu"` in `rag/embed_store.py` (costs about
+  a minute of one-time index-build latency).
+- **Persisted embedding/index cache** (`data/.index_cache/`, gitignored) —
+  keyed by a fingerprint of the embedding model + every chunk text, so an
+  unchanged corpus loads the FAISS index in milliseconds instead of
+  re-embedding ~3,300 chunks. Any corpus/chunking/model change invalidates the
+  fingerprint and forces a clean rebuild.
+- **`MIN_RELEVANCE_SCORE = 0.10`** gates on the **cross-encoder rerank score**
+  (a sigmoid of the reranker logit, 0–1) rather than bi-encoder cosine — raw
+  cosine cannot separate in-corpus from out-of-corpus queries (both land in
+  the same ~0.54–0.65 band), while the rerank score gives a wide, comfortable
+  margin (genuinely out-of-corpus queries score ≈0.00, real queries score
+  ≥0.6; see EVALUATION.md for the current calibration data). It's still a
+  fixed, corpus-calibrated threshold, not an adaptive one. One documented edge
+  case survives and is handled a layer deeper: "What is the capital of
+  France?" scores ~0.95 because the Self-RAG paper quotes that exact phrase as
+  a worked example, so retrieval genuinely contains it — but in "llm" mode the
+  grounded system prompt correctly describes what the Self-RAG passage *says*
+  rather than answering "Paris" from world knowledge (verified live). This
+  threshold is the sole relevance decision in "extractive" mode, which has no
+  LLM to make that call.
+- **Bare-acronym / paper-title queries are handled by two layers**: the
+  cross-encoder reranker (scores a `(query, passage)` pair jointly instead of
+  comparing independent vectors) fixes most of them, and a per-document
+  **metadata card** (`rag/ingest.py:_metadata_card`, one synthetic chunk per
+  paper stating its title, common name, authors, and opening text) covers the
+  handful of acronyms that barely appear in their own paper's body text (e.g.
+  ScaNN). Both stages stay purely neural — no BM25/keyword layer — consistent
+  with the brief's "TF-IDF vectors → Real embeddings" framing. One cosmetic
+  residual: for a few papers whose title text overlaps with a related paper
+  (e.g. "What is BERT?" vs. Sentence-BERT, "What is FAISS?" vs. a
+  FAISS-mentioning DPR chunk), the correct paper lands in the top few results
+  but isn't always ranked strictly first — the answer is still correct, just
+  not perfectly ordered.
+- **Cross-encoder reranking is single-stage, not iterative** — one bi-encoder
+  recall pass (`RERANK_CANDIDATE_POOL` cosine candidates) followed by one
+  cross-encoder rerank, no multi-hop or query-decomposition step. `app.py`'s
+  `LLM_CONTEXT_K = 8` widens the context fed to "llm" mode beyond the UI's
+  displayed `top_k` so most 2–3-paper synthesis questions land both papers in
+  context, but a question needing 4–5 papers at once can still under-retrieve
+  at small `top_k`.
 - **`IndexFlatIP` is exact (brute-force) search, not approximate** — the
-  right choice at ~3,300 chunks, but it doesn't demonstrate the
-  approximate-nearest-neighbor indexing (e.g. `IndexHNSWFlat`) that a much
-  larger corpus would need; noted here as the natural next upgrade if the
-  corpus grows substantially.
+  right choice at ~3,300 chunks, but doesn't demonstrate approximate-nearest-
+  neighbor indexing (e.g. `IndexHNSWFlat`), which a much larger corpus would
+  need.
 - **`faiss` must be imported after `torch`/`sentence-transformers`** in
   `rag/embed_store.py` — on macOS, importing it first has been observed to
   segfault during model load, since both bundle their own OpenMP runtime.
-  Already handled (see the import order and comment in that file) — flagged
-  here so it isn't accidentally "fixed" by reordering imports later.
-- **LLM mode depends on a cloud API call (a Gemini model, via the Gemini
-  API).** This trades "works fully offline, zero marginal cost" for "runs on
-  Google's hardware" — the real costs are needing a `GOOGLE_API_KEY`, being
-  subject to the free tier's rate limits, and retrieved paper excerpts leaving
-  your machine over the network on every "llm"-mode query.
-  **The model is user-selectable** from a sidebar dropdown in LLM mode
-  (`AVAILABLE_MODELS` in `rag/generate.py`; default `gemini-2.5-flash`):
+- **LLM mode depends on a cloud API call** (a Gemini model, via the Gemini
+  API) — trades "works fully offline, zero marginal cost" for needing a
+  `GOOGLE_API_KEY`, the free tier's rate limits, and retrieved paper excerpts
+  leaving your machine over the network on every "llm"-mode query. **The
+  model is user-selectable** from a sidebar dropdown (`AVAILABLE_MODELS` in
+  `rag/generate.py`; default `gemini-2.5-flash`). Only two models are offered
+  — other Gemini models (`gemini-3.5-flash`, `gemini-2.5-flash-lite`,
+  `gemini-2.0-flash`) were tried and are rate-limited too aggressively on the
+  free tier to be usable here:
 
   | Model | Speed | Grounding | Notes |
   |---|---|---|---|
-  | `gemini-2.5-flash` (default) | ~3–4s | strict | proven-stable, obeys documents-only rule |
-  | `gemini-3.5-flash` | fast when up | strict | strongest, but was intermittently `503`-congested on the free tier at time of writing |
+  | `gemini-2.5-flash` (default) | ~3s | strict | verified: correctly declines to answer "Paris" from world knowledge |
   | `gemini-3.1-flash-lite` | ~1–2s | **weaker** | fastest; answered "Paris" for the capital-of-France artifact from world knowledge |
-  | `gemini-2.5-flash-lite` | ~1–2s | **weaker** | same world-knowledge leak observed |
-  | `gemini-2.0-flash` | fast | strict | older mainline flash |
 
-  **Grounding vs. speed is a real, measured trade-off** (see EVALUATION.md):
-  full flash models obey the strictly-grounded system prompt (on "what is the
-  capital of France?", whose phrase appears in the Self-RAG paper but whose
-  *answer* does not, they correctly reply "the passages don't state it"),
-  while `-lite` models are ~2× faster but answered "Paris" from world
-  knowledge — a grounding leak that matters for a documents-only system, which
-  is why the default is a full model and the dropdown surfaces the caveat.
-  **Why Gemini, not Gemma.** Generation moved local Ollama (`gemma4:e4b`) →
-  cloud Gemma 4 (`gemma-4-26b-a4b-it`, MoE) → Gemini Flash. Gemma 4 was dropped
-  because it is **unreliable for grounded generation under a token cap**: it
-  spends a variable, *uncappable* number of internal reasoning tokens against
-  `max_output_tokens` (the API rejects `thinking_budget` for that model with a
-  400) and frequently hit the limit before emitting *any* answer text
-  (`finish_reason=MAX_TOKENS`, empty output), worst on multi-paper synthesis
-  questions — surfacing to the user as a **blank answer**. It was also slow and
-  latency-variable (9–70s+) with intermittent `ServerError` 500s.
-  **Robustness (`rag/generate.py`):** transient `ServerError`s (incl. 503
-  under load) are retried up to twice; `ClientError` (bad key, etc.) is not
-  (retrying an auth failure just wastes time). And if the model ever completes
-  with *no text* at all, that's now treated like a transient failure —
-  retried, then a graceful extractive fallback — so LLM mode **never shows a
-  blank answer**. The retries make failures recoverable but can't make a
-  congested/rate-limited endpoint fast; a persistently-503 model falls back to
-  extractive, which is why other models are one dropdown-click away.
+  The free tier also caps total requests per model per day (20/day observed
+  for `gemini-2.5-flash`) — the dropdown lets you switch models if one is rate
+  limited. **Robustness** (`rag/generate.py`): transient `ServerError`s
+  (including 503 under load) are retried up to twice; `ClientError` (bad key,
+  quota exhausted, etc.) is not retried, since retrying an auth/quota failure
+  just wastes time. If the model completes with no text at all, that's also
+  treated as a transient failure and retried, then falls back to extractive —
+  so LLM mode never shows a blank answer.
 - **The system prompt (`rag/generate.py:SYSTEM_PROMPT`) reduces jailbreak
   susceptibility; it does not eliminate it.** No prompt makes any model
   unjailbreakable in an absolute sense — see EVALUATION.md's "Security
-  testing" section for the adversarial prompts actually tried against the
-  local Ollama model (all four were resisted, but one showed a real
-  trade-off: a mixed legitimate-question + jailbreak-attempt prompt
-  sometimes triggers a full refusal rather than a partial answer, a safe
-  failure but a UX cost). Re-verify against whichever Gemini model you select
-  if that matters for your use case — a different model may behave differently.
-- **Real metadata is looked up dynamically (`rag/metadata.py`), not
-  hardcoded.** A user pointed out the original approach — a 23-entry table
-  keyed by filename — would silently stop working the moment the corpus was
-  swapped for different papers. Replaced with: check
-  `data/papers/_manifest.json` (written by `scripts/fetch_papers.py`, ground
-  truth for exactly which paper each fetched PDF is) first, then fall back to
-  extracting arXiv's own watermark ID from the PDF's first-page text and
-  querying arXiv's public API. Swap in different arXiv papers (via the fetch
-  script or dropped in by hand) and metadata resolves automatically — no
-  table to update. Results are cached to `data/arxiv_metadata_cache.json` so
-  repeat launches don't re-hit the network. A PDF with no detectable arXiv ID
-  (not from arXiv, or `data/sample_docs/`) still falls back to a
-  filename-derived title with no authors/year/arXiv link, same as before.
-  **Only page 1's text is searched for the watermark, not the whole
-  document** — searching everything once picked up an unrelated ID cited in
-  a paper's own bibliography instead of its own (found on `hnsw.pdf`, which
-  has no watermark on page 1 at all, being a journal-typeset repost).
-- **The frontend uses no custom CSS at all** — every visual element is a
-  first-party Streamlit component (`st.title`, `st.caption`, `st.badge`,
-  `st.container(border=True)`, `st.columns`, etc.), not `st.markdown(...,
-  unsafe_allow_html=True)` with hand-written styles. An earlier version did
-  use custom CSS (targeting `data-testid` attributes for card shadows and
-  button color) — removed on request, since a future Streamlit upgrade could
-  rename those internal attributes and silently break styling that depended
-  on them, and first-party components don't have that risk. One real
-  trade-off: the relevance badge colors are limited to `st.badge()`'s fixed
-  palette (`red`/`orange`/`yellow`/`blue`/`green`/`violet`/`gray`/`primary`)
-  rather than the exact hex values used before, and there's no way to set a
-  custom max content width — the layout is whatever `layout="wide"` gives.
-- **There is intentionally no `.streamlit/config.toml`.** Testing showed
-  that setting even one `[theme]` key there (tried: just `primaryColor` +
-  `font`) disables Streamlit's own light/dark auto-detection and locks the
-  whole app to a single fixed appearance — confirmed by forcing the OS color
-  scheme to dark and watching the app stay light regardless. The search
-  button's red color comes from Streamlit's own default `primaryColor`
-  (`#FF4B4B`), not anything this project sets, so the app correctly follows
-  whichever mode Streamlit itself is in with zero configuration.
+  testing" section for the adversarial prompts tested against it (a mixed
+  legitimate-question + jailbreak-attempt prompt sometimes triggers a full
+  refusal rather than a partial answer — a safe failure, but a real UX cost).
+- **Real metadata is looked up dynamically** (`rag/metadata.py`), not
+  hardcoded — `data/papers/_manifest.json` (written by
+  `scripts/fetch_papers.py`) is checked first, then arXiv's own watermark ID
+  extracted from the PDF's first-page text (only page 1, to avoid picking up
+  an ID cited in the paper's own bibliography) via arXiv's public API.
+  Results are cached to `data/arxiv_metadata_cache.json`. A PDF with no
+  detectable arXiv ID falls back to a filename-derived title with no
+  authors/year/arXiv link.
+- **The frontend uses no custom CSS** — every visual element is a first-party
+  Streamlit component (`st.title`, `st.caption`, `st.badge`,
+  `st.container(border=True)`, `st.columns`, etc.), so the app automatically
+  follows whichever theme Streamlit itself is configured with. Trade-off: the
+  relevance badge colors are limited to `st.badge()`'s fixed palette, and
+  there's no way to set a custom max content width.
+- **There is intentionally no `.streamlit/config.toml`** — setting even one
+  `[theme]` key there disables Streamlit's own light/dark auto-detection and
+  locks the app to a single fixed appearance (confirmed by testing). The
+  search button's red color is Streamlit's own default `primaryColor`, not
+  anything this project sets.
