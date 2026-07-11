@@ -33,9 +33,10 @@ message if the key is missing/invalid or the API call fails, rather than
 crashing.
 
 Open the URL Streamlit prints (usually `http://localhost:8501`) and ask a
-question like *"How does the attention mechanism work in Transformers?"*
+question like _"How does the attention mechanism work in Transformers?"_
 
 **First run notes:**
+
 - Downloads the `BAAI/bge-small-en-v1.5` embedding model (~130MB) and the
   `cross-encoder/ms-marco-MiniLM-L-6-v2` reranker (~80MB) from Hugging Face —
   needs internet once, then both cached locally. The reranker ships inside
@@ -73,79 +74,36 @@ original 4-file placeholder corpus) is kept around as a lightweight fallback.
 ## Architecture
 
 ```
-PDF/txt files                    data/papers/*.pdf
+PDF/txt files                    data/papers/*.pdf and *.txt
      │
      ▼
-Ingest & chunk         rag/ingest.py: load_documents_any() → build_chunk_records()
-     │                 LangChain loaders (PyMuPDFLoader, TextLoader) →
-     │                 RecursiveCharacterTextSplitter, ~120 words/chunk
-     │                 (word-count length_function), 20-word overlap.
-     │                 Real title/authors/year/arXiv ID looked up dynamically
-     │                 per document (rag/metadata.py: fetch manifest, then
-     │                 the PDF's own arXiv watermark), not a filename guess.
-     │                 Plus one synthetic "metadata card" chunk per paper
-     │                 (_metadata_card): states the title + common name (the
-     │                 filename slug) + authors/year + the paper's opening
-     │                 (abstract) text, so "What is ScaNN?" / "who wrote BERT?"
-     │                 type queries have an explicit chunk to match when the
-     │                 acronym is nearly absent from body text -- and enough
-     │                 real content for the LLM to describe the paper, not just
-     │                 name it
+Ingest & chunk                   rag/ingest.py: LangChain loaders → RecursiveCharacterTextSplitter
+     │                           (~120 words/chunk, 20-word overlap). Dynamically fetches real
+     │                           metadata. Creates one synthetic "metadata card" per paper
+     │                           (abstract + title + slug) to improve acronym/author matching.
      ▼
-Embed                  rag/embed_store.py: VectorStore.build()
-     │                 BAAI/bge-small-en-v1.5 (sentence-transformers, local)
+Embed                            rag/embed_store.py: BAAI/bge-small-en-v1.5 (local)
+     │
      ▼
-Vector store           FAISS IndexFlatIP over L2-normalized embeddings
-     │                 (inner product == cosine similarity; exact search,
-     │                 fast enough at this scale — ~3,300 chunks)
+Vector store                     FAISS IndexFlatIP over L2-normalized embeddings (exact cosine
+     │                           similarity search over ~3,300 chunks).
      ▼
-Retrieve (recall)      VectorStore.query() stage 1 — query embedded with the
-     │                 BGE query-instruction prefix and searched via FAISS for
-     │                 a wide candidate pool (RERANK_CANDIDATE_POOL = 40) by
-     │                 cosine similarity. Still pure dense, no keyword/lexical
-     │                 layer.
+Retrieve (recall)                VectorStore.query() Stage 1: pure dense search via FAISS
+     │                           fetches a wide candidate pool of 40 chunks.
      ▼
-Rerank (precision)     VectorStore.query() stage 2 — a cross-encoder
-     │                 (ms-marco-MiniLM-L-6-v2) re-scores each (query, passage)
-     │                 pair jointly and returns the top_k by that score. Fixes
-     │                 the ordering for weak-signal acronym/title queries a
-     │                 bi-encoder ranks poorly, and yields a relevance score
-     │                 that actually separates in-corpus from out-of-corpus
-     │                 queries (raw cosine does not). Both stages are neural —
-     │                 no lexical/keyword layer of any kind.
+Rerank (precision)               VectorStore.query() Stage 2: ms-marco-MiniLM-L-6-v2 cross-encoder
+     │                           re-scores pairs. Fixes bi-encoder ordering and provides absolute
+     │                           relevance scores.
      ▼
-Relevance filter       app.py: MIN_RELEVANCE_SCORE = 0.10 (on the rerank
-     │                 score, not cosine) drops results below the calibrated
-     │                 threshold so an out-of-corpus query gets a refusal, not
-     │                 a guess. In "llm" mode the grounded system prompt is the
-     │                 real final judge (it refuses off-topic context on its
-     │                 own); the gate is the sole relevance decision only in
-     │                 "extractive" mode
+Relevance filter                 app.py: Drops results below MIN_RELEVANCE_SCORE = 0.10.
+     │                           Prevents hallucinations on out-of-corpus queries.
      ▼
-Generate               rag/generate.py: generate_answer_stream()
-     │                 "extractive" (no dependencies) or "llm" (a cloud Gemini
-     │                 model, chosen from a sidebar dropdown -- default
-     │                 gemini-2.5-flash; see AVAILABLE_MODELS -- via the Gemini
-     │                 API, streamed token-by-token via generate_content_stream,
-     │                 max_output_tokens=1500). In "llm" mode the LLM is fed a
-     │                 wider reranked context than the UI lists (LLM_CONTEXT_K
-     │                 in app.py) so multi-paper synthesis has all needed
-     │                 papers. A fixed SYSTEM_PROMPT sent as system_instruction
-     │                 enforces scope, citation format, and resistance to
-     │                 prompt injection/jailbreak attempts (see EVALUATION.md);
-     │                 grounded strictly in the filtered retrieved chunks,
-     │                 retries transient errors and falls back to extractive if
-     │                 the key is missing/invalid, the call fails, or the model
-     │                 returns no text (never a blank answer)
+Generate                         rag/generate.py: "extractive" or "llm".
+     │                           Streams answer with strict system prompt for grounding,
+     │                           citations, and jailbreak resistance. Auto-fallbacks on error.
      ▼
-Interface              app.py — Streamlit, no custom CSS (first-party
-                        components only -- see Known Limitations): search-bar-
-                        style query form, answer shown in a bordered container
-                        streamed live via st.write_stream(), sources as
-                        bordered cards (title, authors/year, st.badge()
-                        relevance indicator, arXiv link, expandable excerpt),
-                        sidebar settings (top_k, answer mode, LLM model) plus a
-                        system-architecture summary, latency display
+Interface                        app.py: Native Streamlit. Live streaming text, expandable source
+                                 cards with metadata/relevance badges, and sidebar controls.
 ```
 
 ## Project structure
@@ -190,15 +148,6 @@ data, LLM-mode groundedness checks, and jailbreak-resistance testing.
   properly, which isn't worth the complexity for a cosmetic issue). A PDF that
   fails to parse is skipped with a logged warning rather than crashing
   ingestion.
-- **PyMuPDF is AGPL-3.0-licensed** (or needs a commercial license from Artifex
-  for closed-source use) — a non-issue for coursework, but worth knowing if
-  this codebase is ever reused somewhere that can't accept AGPL. `pypdf`
-  (BSD-licensed) is the drop-in alternative in `rag/ingest.py:load_pdf_documents`.
-- **Embeddings and reranking run on MPS (Apple Silicon GPU)** — `VectorStore`
-  sets `device="mps"`, ~3x faster than CPU on this corpus. MPS shares unified
-  memory with the rest of the OS; if `RuntimeError: MPS backend out of memory`
-  ever appears, switch to `device="cpu"` in `rag/embed_store.py` (costs about
-  a minute of one-time index-build latency).
 - **Persisted embedding/index cache** (`data/.index_cache/`, gitignored) —
   keyed by a fingerprint of the embedding model + every chunk text, so an
   unchanged corpus loads the FAISS index in milliseconds instead of
@@ -214,7 +163,7 @@ data, LLM-mode groundedness checks, and jailbreak-resistance testing.
   case survives and is handled a layer deeper: "What is the capital of
   France?" scores ~0.95 because the Self-RAG paper quotes that exact phrase as
   a worked example, so retrieval genuinely contains it — but in "llm" mode the
-  grounded system prompt correctly describes what the Self-RAG passage *says*
+  grounded system prompt correctly describes what the Self-RAG passage _says_
   rather than answering "Paris" from world knowledge (verified live). This
   threshold is the sole relevance decision in "extractive" mode, which has no
   LLM to make that call.
@@ -242,32 +191,6 @@ data, LLM-mode groundedness checks, and jailbreak-resistance testing.
   right choice at ~3,300 chunks, but doesn't demonstrate approximate-nearest-
   neighbor indexing (e.g. `IndexHNSWFlat`), which a much larger corpus would
   need.
-- **`faiss` must be imported after `torch`/`sentence-transformers`** in
-  `rag/embed_store.py` — on macOS, importing it first has been observed to
-  segfault during model load, since both bundle their own OpenMP runtime.
-- **LLM mode depends on a cloud API call** (a Gemini model, via the Gemini
-  API) — trades "works fully offline, zero marginal cost" for needing a
-  `GOOGLE_API_KEY`, the free tier's rate limits, and retrieved paper excerpts
-  leaving your machine over the network on every "llm"-mode query. **The
-  model is user-selectable** from a sidebar dropdown (`AVAILABLE_MODELS` in
-  `rag/generate.py`; default `gemini-2.5-flash`). Only two models are offered
-  — other Gemini models (`gemini-3.5-flash`, `gemini-2.5-flash-lite`,
-  `gemini-2.0-flash`) were tried and are rate-limited too aggressively on the
-  free tier to be usable here:
-
-  | Model | Speed | Grounding | Notes |
-  |---|---|---|---|
-  | `gemini-2.5-flash` (default) | ~3s | strict | verified: correctly declines to answer "Paris" from world knowledge |
-  | `gemini-3.1-flash-lite` | ~1–2s | **weaker** | fastest; answered "Paris" for the capital-of-France artifact from world knowledge |
-
-  The free tier also caps total requests per model per day (20/day observed
-  for `gemini-2.5-flash`) — the dropdown lets you switch models if one is rate
-  limited. **Robustness** (`rag/generate.py`): transient `ServerError`s
-  (including 503 under load) are retried up to twice; `ClientError` (bad key,
-  quota exhausted, etc.) is not retried, since retrying an auth/quota failure
-  just wastes time. If the model completes with no text at all, that's also
-  treated as a transient failure and retried, then falls back to extractive —
-  so LLM mode never shows a blank answer.
 - **The system prompt (`rag/generate.py:SYSTEM_PROMPT`) reduces jailbreak
   susceptibility; it does not eliminate it.** No prompt makes any model
   unjailbreakable in an absolute sense — see EVALUATION.md's "Security
@@ -282,14 +205,3 @@ data, LLM-mode groundedness checks, and jailbreak-resistance testing.
   Results are cached to `data/arxiv_metadata_cache.json`. A PDF with no
   detectable arXiv ID falls back to a filename-derived title with no
   authors/year/arXiv link.
-- **The frontend uses no custom CSS** — every visual element is a first-party
-  Streamlit component (`st.title`, `st.caption`, `st.badge`,
-  `st.container(border=True)`, `st.columns`, etc.), so the app automatically
-  follows whichever theme Streamlit itself is configured with. Trade-off: the
-  relevance badge colors are limited to `st.badge()`'s fixed palette, and
-  there's no way to set a custom max content width.
-- **There is intentionally no `.streamlit/config.toml`** — setting even one
-  `[theme]` key there disables Streamlit's own light/dark auto-detection and
-  locks the app to a single fixed appearance (confirmed by testing). The
-  search button's red color is Streamlit's own default `primaryColor`, not
-  anything this project sets.
