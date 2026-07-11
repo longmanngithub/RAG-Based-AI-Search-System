@@ -50,7 +50,6 @@ scripts/
 *.json.cache
 *.log
 .cache/
-EVALUATION.md
 
 # Jupyter Notebook
 .ipynb_checkpoints/
