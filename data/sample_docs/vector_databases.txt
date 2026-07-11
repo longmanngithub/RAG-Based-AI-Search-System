@@ -1,0 +1,14 @@
+Vector Databases and Similarity Search
+
+A vector database stores embeddings (numeric vectors representing text, images, or
+other content) and supports fast nearest-neighbor search over them. Given a query
+vector, the database returns the stored vectors most similar to it, typically using
+cosine similarity or Euclidean distance. Popular options include FAISS, a library for
+efficient similarity search that runs locally, and Chroma, which adds persistence and
+a simpler developer API on top of a similar core.
+
+At small scale, similarity search can be done with plain matrix operations: embed
+every document once, store the vectors in memory, and compute similarity against a
+query vector directly. At larger scale, vector databases use indexing structures
+(such as approximate nearest neighbor graphs) to avoid comparing the query against
+every stored vector one by one.

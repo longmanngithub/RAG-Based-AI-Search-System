@@ -1,0 +1,10 @@
+CS382 Course Policies (Sample Document)
+
+This is a placeholder document included only so the starter project has a small,
+working document collection to search over out of the box. Replace the files in
+data/sample_docs with your own domain's documents: product manuals, research papers,
+news articles, personal notes, or anything else with meaningful text content.
+
+Late work policy: assignments submitted after the deadline lose ten percent per day
+unless an extension was requested in advance. Academic integrity: all submitted code
+must be your own work; cite any external libraries or snippets you rely on.

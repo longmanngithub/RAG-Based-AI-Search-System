@@ -1,0 +1,14 @@
+Recommender Systems
+
+Recommender systems suggest items to users based on past behavior or item content.
+Content-based filtering recommends items similar to what a user already liked, using
+item features such as genre, tags, or description text. It represents each item as a
+feature vector, often built with TF-IDF, and represents the user as the average
+vector of the items they liked. New items are ranked by cosine similarity to that
+user profile.
+
+Collaborative filtering instead looks at other users with similar taste and
+recommends what they liked, without needing item features at all. Hybrid systems
+combine both approaches to cover each other's weaknesses: content-based filtering
+struggles with overspecialization, while collaborative filtering struggles with new
+items that have no interaction history yet (the cold-start problem).

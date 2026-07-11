@@ -1,0 +1,14 @@
+Retrieval-Augmented Generation (RAG)
+
+RAG systems combine a retrieval step with a generation step. First, a user query is
+embedded into a vector and compared against a database of document chunks using
+similarity search. The top-k most relevant chunks are retrieved. Then those chunks
+are inserted into a prompt along with the original query and passed to a large
+language model, which generates an answer grounded in the retrieved text rather than
+relying purely on what it memorized during training.
+
+This grounding is what makes RAG useful for search over private or fast-changing
+document collections: the model can cite the specific passages it used, and the
+retrieval index can be updated without retraining the model itself. The quality of a
+RAG system depends heavily on chunking strategy, embedding quality, and how many
+chunks are retrieved per query.
