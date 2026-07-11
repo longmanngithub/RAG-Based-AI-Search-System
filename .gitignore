@@ -44,13 +44,13 @@ Thumbs.db
 
 # Project-specific
 data/.index_cache/
-data/papers/
 data/downloaded_data/
 data/processed_data/
-data/sample_docs/
+scripts/
 *.json.cache
 *.log
 .cache/
+EVALUATION.md
 
 # Jupyter Notebook
 .ipynb_checkpoints/
