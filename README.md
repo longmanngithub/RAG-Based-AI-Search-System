@@ -59,9 +59,9 @@ question like _"How does the attention mechanism work in Transformers?"_
 ## Corpus
 
 23 AI/ML research papers, fetched as PDFs from arXiv's public endpoint (no
-auth required) via `scripts/fetch_papers.py`, covering four themes — chosen
-so the corpus is literally "papers about the kind of system this project
-builds":
+auth required) during development via a one-off fetch script, covering four
+themes — chosen so the corpus is literally "papers about the kind of system
+this project builds":
 
 - **Foundational**: Attention Is All You Need (1706.03762), BERT (1810.04805), word2vec (1301.3781), Sentence-BERT (1908.10084), RoBERTa (1907.11692), GPT-3 (2005.14165)
 - **Retrieval-augmented generation**: RAG (2005.11401), REALM (2002.08909), Dense Passage Retrieval (2004.04906), In-Context RALM (2302.00083), Self-RAG (2310.11511), RAG Survey (2312.10997)
@@ -114,11 +114,9 @@ final_project_starter/
 ├── .env.example               # copy to .env and add your GOOGLE_API_KEY
 ├── requirements.txt
 ├── EVALUATION.md              # 10 test queries + retrieval/generation write-up
-├── scripts/
-│   └── fetch_papers.py       # one-off: downloads the arXiv corpus
 ├── data/
 │   ├── papers/                # 23 arXiv PDFs (the real corpus used by app.py)
-│   │   └── _manifest.json     # filename slug -> arxiv_id, written by fetch_papers.py
+│   │   └── _manifest.json     # filename slug -> arxiv_id, from the one-off fetch script
 │   ├── arxiv_metadata_cache.json  # cached title/authors/year lookups (auto-created)
 │   └── sample_docs/           # original 4-file placeholder corpus (fallback)
 └── rag/
@@ -127,6 +125,12 @@ final_project_starter/
     ├── embed_store.py         # BGE bi-encoder recall + FAISS + cross-encoder rerank (both neural, no keyword layer)
     └── generate.py            # extractive / cloud Gemini answer generation (selectable model), system prompt
 ```
+
+Not committed to this repo (see `.gitignore`): `.venv/`, `__pycache__/`,
+`.env` (your API key), `data/.index_cache/` (rebuildable FAISS/embedding
+cache), and the one-off corpus-fetch script — the fetched PDFs themselves
+are committed under `data/papers/`, so cloning this repo doesn't require
+re-fetching anything.
 
 ## Evaluation
 
